@@ -263,7 +263,11 @@ describe("parseRecipeFromUrl import flow", () => {
 
       await parseRecipeFromUrl("https://example.com/recipe", "recipe-1", false, tokens);
 
-      expect(mockFetchRenderedPage).toHaveBeenCalledWith("https://example.com/recipe", tokens);
+      expect(mockFetchRenderedPage).toHaveBeenCalledWith(
+        "https://example.com/recipe",
+        tokens,
+        expect.any(Function)
+      );
     });
 
     it("reads the plain page when no Page Renderer reads it", async () => {
@@ -430,7 +434,7 @@ describe("parseRecipeFromUrl import flow", () => {
 
     expect(result).toEqual({ recipe: structuredRecipe, usedAI: false });
     expect(mockCallRecipeScrapersParser).toHaveBeenCalled();
-    expect(mockGetContentIndicators).not.toHaveBeenCalled();
+    expect(mockGetContentIndicators).toHaveBeenCalledTimes(1);
     expect(mockExtractRecipeWithAI).not.toHaveBeenCalled();
   });
 
@@ -441,7 +445,7 @@ describe("parseRecipeFromUrl import flow", () => {
     const result = await parseRecipeFromUrl("https://example.com/recipe", "recipe-1");
 
     expect(result).toMatchObject({ recipe: aiRecipe, usedAI: true });
-    expect(mockGetContentIndicators).toHaveBeenCalled();
+    expect(mockGetContentIndicators).toHaveBeenCalledTimes(2);
   });
 
   it("falls back to AI on structured parser failure when AI is enabled and the page is recipe-like", async () => {
@@ -655,6 +659,67 @@ describe("parseRecipeFromUrl import flow", () => {
     expect(mockExtractRecipeWithAI).not.toHaveBeenCalled();
   });
 
+  describe("waiting for a rendered recipe", () => {
+    const RECIPE_SCHEMA = 'itemtype="https://schema.org/recipe"';
+
+    /** The wait the import hands the Page Renderers, with these indicators in force. */
+    async function renderWait() {
+      mockGetContentIndicators.mockResolvedValue({
+        schemaIndicators: [RECIPE_SCHEMA],
+        contentIndicators: ["ingredients", "directions"],
+      });
+      const { parseRecipeFromUrl } = await import("@norish/api/parser");
+
+      await parseRecipeFromUrl("https://example.com/recipe", "recipe-1");
+
+      return mockFetchRenderedPage.mock.calls[0]?.[2] as (html: string) => boolean;
+    }
+
+    it("keeps waiting on a shell whose scripts name the indicators", async () => {
+      const isSettled = await renderWait();
+
+      expect(
+        isSettled(`<html><body>
+          <p>Loading</p>
+          <script>{"labels":["ingredients","directions"]}</script>
+        </body></html>`)
+      ).toBe(false);
+    });
+
+    it("keeps waiting on a page that has gone blank", async () => {
+      const isSettled = await renderWait();
+
+      expect(isSettled("<html><body></body></html>")).toBe(false);
+    });
+
+    it("stops once the recipe is in the page's text", async () => {
+      const isSettled = await renderWait();
+
+      expect(
+        isSettled(`<html><body>
+          <h2>Ingredients</h2><ul><li>9 oz ravioli</li></ul>
+          <h2>Directions</h2><p>Boil until tender.</p>
+        </body></html>`)
+      ).toBe(true);
+    });
+
+    it("stops on recipe markup without waiting for the text", async () => {
+      const isSettled = await renderWait();
+
+      expect(isSettled(`<html><body><div ${RECIPE_SCHEMA}></div></body></html>`)).toBe(true);
+    });
+
+    it("keeps waiting on a bot check that names the indicators", async () => {
+      const isSettled = await renderWait();
+
+      expect(
+        isSettled(`<html><head><title>Just a moment</title></head><body>
+          <h2>Ingredients</h2><h2>Directions</h2>
+        </body></html>`)
+      ).toBe(false);
+    });
+  });
+
   describe("import triage with a Decision Model", () => {
     const notARecipe = {
       ok: false,
@@ -683,7 +748,7 @@ describe("parseRecipeFromUrl import flow", () => {
       expect(mockIsRecipe).toHaveBeenCalledTimes(1);
       // The question is asked of the sanitized text, not the raw markup.
       expect(mockIsRecipe).toHaveBeenCalledWith("ingredient instructions");
-      expect(mockGetContentIndicators).not.toHaveBeenCalled();
+      expect(mockGetContentIndicators).toHaveBeenCalledTimes(1);
       expect(mockExtractRecipeWithAI).not.toHaveBeenCalled();
     });
 
@@ -724,7 +789,7 @@ describe("parseRecipeFromUrl import flow", () => {
       const result = await parseRecipeFromUrl("https://example.com/page", "recipe-1");
 
       expect(result).toMatchObject({ recipe: aiRecipe, usedAI: true });
-      expect(mockGetContentIndicators).not.toHaveBeenCalled();
+      expect(mockGetContentIndicators).toHaveBeenCalledTimes(1);
     });
 
     it("falls back to the keyword rule when triage has no opinion", async () => {
@@ -737,7 +802,7 @@ describe("parseRecipeFromUrl import flow", () => {
       await expect(parseRecipeFromUrl("https://example.com/page", "recipe-1")).rejects.toThrow(
         "Page does not appear to contain a recipe."
       );
-      expect(mockGetContentIndicators).toHaveBeenCalled();
+      expect(mockGetContentIndicators).toHaveBeenCalledTimes(2);
     });
 
     it("sends a structured parse the Decision Model scores as incomplete through AI extraction", async () => {
