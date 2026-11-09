@@ -10,7 +10,6 @@ import {
 } from "@norish/queue/ingredient-review/producer";
 import { canDrawImages, isAIEnabled } from "@norish/shared-server/config/server-config-loader";
 import { listFillGapsFoods } from "@norish/shared-server/ingredients/nutrition/fill-gaps";
-import { timedStage } from "@norish/shared-server/lib/catalogue-timing";
 import { trpcLogger as log } from "@norish/shared-server/logger";
 
 import { adminProcedure } from "../../middleware";
@@ -21,8 +20,8 @@ const CleanUpScopeSchema = z.enum(["recipe-foods", "whole-catalogue"] satisfies 
 /** How many foods each scope's Clean up catalogue asks about, and whether a run is on. */
 const cleanUpCounts = adminProcedure.query(async () => {
   const [recipeFoods, wholeCatalogue] = await Promise.all([
-    timedStage("clean-up:recipe-foods", 500, () => listCleanUpFoods("recipe-foods")),
-    timedStage("clean-up:whole-catalogue", 500, () => listCleanUpFoods("whole-catalogue")),
+    listCleanUpFoods("recipe-foods"),
+    listCleanUpFoods("whole-catalogue"),
   ]);
 
   return { recipeFoods: recipeFoods.length, wholeCatalogue: wholeCatalogue.length };
@@ -52,10 +51,7 @@ const cleanUp = adminProcedure
 
 /** How many listed foods each Fill gaps box fills (icons null where nothing draws). */
 const fillGapsCounts = adminProcedure.query(async () => {
-  const [foods, canDraw] = await Promise.all([
-    timedStage("fill:total", 500, () => listFillGapsFoods()),
-    canDrawImages(),
-  ]);
+  const [foods, canDraw] = await Promise.all([listFillGapsFoods(), canDrawImages()]);
 
   return {
     nutrition: foods.nutrition.length,

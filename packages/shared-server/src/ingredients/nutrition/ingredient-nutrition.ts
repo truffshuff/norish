@@ -56,7 +56,6 @@ import {
   findNutritionLineage,
   findNutritionRules,
 } from "@norish/db/repositories/ingredient-nutrition";
-import { timedStage } from "@norish/shared-server/lib/catalogue-timing";
 
 /** Whose corrections count: a household's members, or nobody's (the catalogue export). */
 export interface NutritionReader {
@@ -101,18 +100,12 @@ function first<T>(offers: ReadonlyArray<Offer<T>>): { value: T; source: Nutritio
 
 /** The corrections, estimates, foods and rules every node of a lineage needs, in five queries. */
 async function readSources(nodes: readonly NutritionNode[], reader: NutritionReader) {
-  const corrections = await timedStage("sources:household-corrections", nodes.length, () =>
-    findHouseholdCorrections(
-      nodes.map((node) => node.id),
-      reader.householdUserIds
-    )
+  const corrections = await findHouseholdCorrections(
+    nodes.map((node) => node.id),
+    reader.householdUserIds
   );
-  const estimates = await timedStage("sources:estimates", nodes.length, () =>
-    findNutritionEstimates(nodes.map((node) => node.id))
-  );
-  const rules = await timedStage("sources:rules", nodes.length, () =>
-    findNutritionRules(nodes.flatMap((node) => (node.offId ? [node.offId] : [])))
-  );
+  const estimates = await findNutritionEstimates(nodes.map((node) => node.id));
+  const rules = await findNutritionRules(nodes.flatMap((node) => (node.offId ? [node.offId] : [])));
   const fixes = new Map<string, string>();
   const densityFixes = new Map<string, string>();
   const pieceFixes = new Map<string, string | null>();
@@ -155,9 +148,7 @@ async function readSources(nodes: readonly NutritionNode[], reader: NutritionRea
     }
   }
 
-  const foods = await timedStage(`sources:foods(ndbs=${ndbs.length})`, keys.length, () =>
-    findNutritionFoods(keys, ndbs)
-  );
+  const foods = await findNutritionFoods(keys, ndbs);
   const byKey = new Map(foods.map((food) => [`${food.dataset}:${food.code}`, food]));
   const byNdb = new Map<string, NutritionFoodRow>();
 
@@ -408,16 +399,12 @@ export interface NutritionGaps {
 export async function findNutritionGaps(
   ingredientIds: readonly string[]
 ): Promise<Map<string, NutritionGaps>> {
-  const lineage = await timedStage("gaps:lineage", ingredientIds.length, () =>
-    findNutritionLineage(ingredientIds)
-  );
+  const lineage = await findNutritionLineage(ingredientIds);
   const nodes = [...new Set(ingredientIds)].flatMap((id) => lineage.get(id) ?? []);
   const sources = await readSources(nodes, NO_HOUSEHOLD);
   const corrected = new Map<string, NutritionGaps>();
 
-  for (const row of await timedStage("gaps:any-corrections", ingredientIds.length, () =>
-    findAnyCorrections(ingredientIds)
-  )) {
+  for (const row of await findAnyCorrections(ingredientIds)) {
     const was = corrected.get(row.ingredientId);
     const typed = [row.kcal, row.fat, row.carbs, row.protein].every((value) => value !== null);
 

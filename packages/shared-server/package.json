@@ -40,7 +40,6 @@
     "./ai/runtime/*": "./src/ai/runtime/*.ts",
     "./video/yt-dlp-version": "./src/video/yt-dlp-version.ts",
     "./caldav/ics-helpers": "./src/caldav/ics-helpers.ts",
-    "./lib/catalogue-timing": "./src/lib/catalogue-timing.ts",
     "./lib/workspace-paths": "./src/lib/workspace-paths.ts",
     "./lib/operation-context": "./src/lib/operation-context.ts",
     "./page-renderers": "./src/page-renderers.ts",
