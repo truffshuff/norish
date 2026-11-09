@@ -13,6 +13,7 @@ import {
   saveNutritionEstimate,
 } from "@norish/db/repositories/ingredient-nutrition";
 import { estimateFoodFacts } from "@norish/shared-server/ai/enrichment/ingredient-nutrition-estimator";
+import { timedStage } from "@norish/shared-server/lib/catalogue-timing";
 
 import type { IconFood } from "../icon-rounds";
 import type { IconSet } from "../icons";
@@ -74,12 +75,12 @@ function foodsWithGap(
 export async function listFillGapsFoods(
   set: IconSet = shippedIconSet()
 ): Promise<Record<"nutrition" | "conversions" | "icons", IconFood[]>> {
-  const listed = await listListedIngredientIds();
+  const listed = await timedStage("fill:listed", 500, () => listListedIngredientIds());
   // Over the whole catalogue these are heavy, so both boxes share one read of them.
   const [gaps, names, icons] = await Promise.all([
-    findNutritionGaps(listed),
-    findCatalogueIngredientNames(listed),
-    listFoodsShowingNoIcon(listed, set),
+    timedStage("fill:gaps-total", listed.length, () => findNutritionGaps(listed)),
+    timedStage("fill:names", listed.length, () => findCatalogueIngredientNames(listed)),
+    timedStage("fill:icons", listed.length, () => listFoodsShowingNoIcon(listed, set)),
   ]);
 
   return {
